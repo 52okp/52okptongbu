@@ -1,0 +1,165 @@
+name: Build Windows and Intel Mac releases
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'v0.0.1/**'
+      - '.github/workflows/build-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      exists: ${{ steps.release.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - id: meta
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./v0.0.1/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-windows:
+    needs: check-release
+    if: needs.check-release.outputs.exists != 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: v0.0.1/package-lock.json
+      - run: npm ci
+        working-directory: v0.0.1
+      - run: npm run dist:win
+        working-directory: v0.0.1
+      - run: npm run build:win
+        working-directory: v0.0.1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            v0.0.1/release/文章同步工作台-${{ needs.check-release.outputs.version }}-Windows-x64-setup.exe
+            v0.0.1/release/assets/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 3
+
+  build-macos-intel:
+    needs: check-release
+    if: needs.check-release.outputs.exists != 'true'
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: v0.0.1/package-lock.json
+      - run: npm ci
+        working-directory: v0.0.1
+      - run: npm run dist:mac
+        working-directory: v0.0.1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-release
+          path: |
+            v0.0.1/release/文章同步工作台-${{ needs.check-release.outputs.version }}-macOS-x64.dmg
+            v0.0.1/release/文章同步工作台-${{ needs.check-release.outputs.version }}-macOS-x64.zip
+          if-no-files-found: error
+          retention-days: 3
+
+  publish-release:
+    needs: [check-release, build-windows, build-macos-intel]
+    if: needs.check-release.outputs.exists != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release-assets/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-intel-release
+          path: release-assets/macos
+      - name: Create platform update manifest
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const path = require('node:path');
+          const version = process.env.VERSION;
+          const files = {
+            windows: path.join('release-assets','windows','assets',`ArticleSyncWorkbench-${version}-Windows-x64.zip`),
+            macos: path.join('release-assets','macos',`文章同步工作台-${version}-macOS-x64.zip`)
+          };
+          const digest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+          const manifest = {
+            app: 'ArticleSyncWorkbench',
+            version,
+            releaseUrl: `https://github.com/52okp/52okptongbu/releases/tag/v${version}`,
+            notes: '文章同步工作台 Windows 和 Intel Mac 版本更新。',
+            platforms: {
+              windows: {
+                downloadUrl: `https://github.com/52okp/52okptongbu/releases/download/v${version}/ArticleSyncWorkbench-${version}-Windows-x64.zip`,
+                sha256: digest(files.windows)
+              },
+              macos: {
+                downloadUrl: `https://github.com/52okp/52okptongbu/releases/download/v${version}/文章同步工作台-${version}-macOS-x64.zip`,
+                sha256: digest(files.macos)
+              }
+            }
+          };
+          fs.writeFileSync('update.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.check-release.outputs.version }}
+        shell: bash
+        run: |
+          gh release create "v$VERSION" \
+            "release-assets/windows/文章同步工作台-$VERSION-Windows-x64-setup.exe" \
+            "release-assets/windows/assets/ArticleSyncWorkbench-$VERSION-Windows-x64.zip" \
+            "release-assets/macos/文章同步工作台-$VERSION-macOS-x64.dmg" \
+            "release-assets/macos/文章同步工作台-$VERSION-macOS-x64.zip" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "文章同步工作台 v$VERSION" \
+            --notes "Windows x64 安装版、Windows 便携更新包和 Intel Mac 版本。CSDN 凭据由用户在本机设置并使用系统安全存储保护。"
+      - name: Commit update manifest
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add update.json
+          git commit -m "Update release manifest v$VERSION"
+          git push origin HEAD:main

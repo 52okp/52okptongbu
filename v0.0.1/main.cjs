@@ -123,15 +123,30 @@ async function getUpdateManifest() {
   const response = await session.defaultSession.fetch(UPDATE_MANIFEST_URL, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`GitHub 更新信息请求失败（HTTP ${response.status}）`);
   const manifest = await response.json();
-  if (manifest.app !== 'ArticleSyncWorkbench' || !parseVersion(manifest.version) || !/^[a-f0-9]{64}$/i.test(manifest.sha256 || '')) throw new Error('GitHub 更新清单格式无效');
-  const assetUrl = new URL(manifest.downloadUrl);
+  if (manifest.app !== 'ArticleSyncWorkbench' || !parseVersion(manifest.version)) throw new Error('GitHub 更新清单格式无效');
+  const platformKey = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : null;
+  if (!platformKey) throw new Error('当前系统暂不支持自动更新');
+  const update = manifest.platforms?.[platformKey] || (platformKey === 'windows' && manifest.downloadUrl ? manifest : null);
+  if (!update || !/^[a-f0-9]{64}$/i.test(update.sha256 || '')) throw new Error(`GitHub 尚未发布 ${platformKey} 更新包`);
+  const assetUrl = new URL(update.downloadUrl);
   const releaseUrl = new URL(manifest.releaseUrl);
-  const expectedAsset = `/52okp/52okptongbu/releases/download/v${manifest.version}/ArticleSyncWorkbench-${manifest.version}-Windows-x64.zip`;
-  if (assetUrl.protocol !== 'https:' || assetUrl.hostname !== 'github.com' || assetUrl.pathname !== expectedAsset) throw new Error('更新下载地址不是指定的 GitHub Release');
+  const expectedName = platformKey === 'windows'
+    ? `ArticleSyncWorkbench-${manifest.version}-Windows-x64.zip`
+    : `文章同步工作台-${manifest.version}-macOS-x64.zip`;
+  const expectedAsset = `/52okp/52okptongbu/releases/download/v${manifest.version}/${expectedName}`;
+  if (assetUrl.protocol !== 'https:' || assetUrl.hostname !== 'github.com' || decodeURIComponent(assetUrl.pathname) !== expectedAsset) throw new Error('更新下载地址不是指定的 GitHub Release');
   if (releaseUrl.protocol !== 'https:' || releaseUrl.hostname !== 'github.com' || releaseUrl.pathname !== '/52okp/52okptongbu/releases/tag/v' + manifest.version) throw new Error('更新页面地址无效');
-  return manifest;
+  return { ...manifest, update, platformKey };
 }
 function psLiteral(value) { return `'${String(value).replace(/'/g, "''")}'`; }
+async function findMacAppBundle(directory) {
+  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory() && entry.name.endsWith('.app')) return fullPath;
+    if (entry.isDirectory()) { const nested = await findMacAppBundle(fullPath); if (nested) return nested; }
+  }
+  return null;
+}
 function csdnCredentialsPath() { return path.join(app.getPath('userData'), 'csdn-credentials.dat'); }
 function loadCsdnCredentials() {
   const file = csdnCredentialsPath();
@@ -267,19 +282,21 @@ ipcMain.handle('update:check', async () => {
     currentVersion: app.getVersion(),
     latestVersion: manifest.version,
     available: isNewerVersion(manifest.version, app.getVersion()),
+    platform: manifest.platformKey,
     releaseUrl: manifest.releaseUrl,
     notes: String(manifest.notes || '').slice(0, 4000)
   };
 });
 ipcMain.handle('update:install', async () => {
-  if (!app.isPackaged) throw new Error('当前从源码运行，无法替换程序。请在 Windows 便携版中使用检查更新。');
+  if (!app.isPackaged) throw new Error('当前从源码运行，无法替换程序。请在已安装版本中使用检查更新。');
   const manifest = await getUpdateManifest();
   if (!isNewerVersion(manifest.version, app.getVersion())) return { upToDate: true, version: app.getVersion() };
+  if (!['win32','darwin'].includes(process.platform)) throw new Error('当前系统暂不支持自动安装更新');
   const root = path.join(app.getPath('userData'), 'updates', manifest.version, Date.now().toString());
   const zipPath = path.join(root, 'update.zip');
   const appPath = path.join(root, 'app');
   await fs.mkdir(root, { recursive: true });
-  const response = await session.defaultSession.fetch(manifest.downloadUrl, { redirect: 'follow', signal: AbortSignal.timeout(10 * 60 * 1000) });
+  const response = await session.defaultSession.fetch(manifest.update.downloadUrl, { redirect: 'follow', signal: AbortSignal.timeout(10 * 60 * 1000) });
   if (!response.ok || !response.body) throw new Error(`下载更新包失败（HTTP ${response.status}）`);
   const total = Number(response.headers.get('content-length')) || 0;
   let received = 0;
@@ -291,17 +308,26 @@ ipcMain.handle('update:install', async () => {
   await pipeline(require('node:stream').Readable.fromWeb(response.body), progress, createWriteStream(zipPath));
   const hash = crypto.createHash('sha256');
   for await (const chunk of createReadStream(zipPath)) hash.update(chunk);
-  if (hash.digest('hex').toLowerCase() !== manifest.sha256.toLowerCase()) {
+  if (hash.digest('hex').toLowerCase() !== manifest.update.sha256.toLowerCase()) {
     await fs.rm(zipPath, { force: true });
     throw new Error('更新包 SHA-256 校验失败，已删除下载文件');
   }
   await fs.mkdir(appPath, { recursive: true });
-  const command = `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath ${psLiteral(zipPath)} -DestinationPath ${psLiteral(appPath)} -Force`;
-  await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command], { windowsHide: true, timeout: 10 * 60 * 1000 });
-  const executable = path.join(appPath, 'ArticleSyncWorkbench.exe');
-  if (!fsSync.existsSync(executable)) throw new Error('更新包结构无效：缺少 ArticleSyncWorkbench.exe');
+  let executable, launchArgs=[];
+  if (process.platform === 'win32') {
+    const command = `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath ${psLiteral(zipPath)} -DestinationPath ${psLiteral(appPath)} -Force`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command], { windowsHide: true, timeout: 10 * 60 * 1000 });
+    executable = path.join(appPath, 'ArticleSyncWorkbench.exe');
+    if (!fsSync.existsSync(executable)) throw new Error('更新包结构无效：缺少 ArticleSyncWorkbench.exe');
+  } else {
+    await execFileAsync('/usr/bin/ditto', ['-x', '-k', zipPath, appPath], { timeout: 10 * 60 * 1000 });
+    executable = await findMacAppBundle(appPath);
+    if (!executable) throw new Error('更新包结构无效：缺少 macOS .app');
+    launchArgs = ['-n', executable];
+    executable = '/usr/bin/open';
+  }
   await new Promise((resolve, reject) => {
-    const child = spawn(executable, [], { cwd: appPath, detached: true, stdio: 'ignore' });
+    const child = spawn(executable, launchArgs, { cwd: appPath, detached: true, stdio: 'ignore' });
     child.once('error', reject);
     child.once('spawn', () => { child.unref(); resolve(); });
   });

@@ -7,7 +7,9 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "build:win": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\package-win.ps1"
+    "build:win": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\package-win.ps1",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --x64"
   },
   "devDependencies": {
     "electron": "^39.8.10",
@@ -18,10 +20,30 @@
     "productName": "文章同步工作台",
     "asar": true,
     "directories": { "output": "release" },
-    "files": ["main.cjs", "preload.cjs", "desktop.html", "desktop.css", "desktop.js", "package.json"],
+    "files": [
+      "main.cjs", "preload.cjs", "desktop.html", "desktop.css", "desktop.js", "workbench.js",
+      "workbench-layout.css", "button-layout.css", "panel-alignment.css", "sidebar-history.css", "styles.css",
+      "package.json", "THIRD-PARTY-NOTICES.md", "lib/**/*", "adapters/**/*", "vendor/**/*"
+    ],
     "win": {
-      "target": [{ "target": "portable", "arch": ["x64"] }],
-      "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "${productName}-${version}-Windows-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ],
+      "artifactName": "${productName}-${version}-macOS-${arch}.${ext}",
+      "category": "public.app-category.productivity",
+      "identity": null
     }
   }
 }
