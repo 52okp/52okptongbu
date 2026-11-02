@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'v0.0.2/**'
+      - 'v0.0.3/**'
       - '.github/workflows/build-release.yml'
   workflow_dispatch:
 
@@ -25,7 +25,7 @@ jobs:
       - id: meta
         shell: bash
         run: |
-          VERSION=$(node -p "require('./v0.0.2/package.json').version")
+          VERSION=$(node -p "require('./v0.0.3/package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - id: release
         env:
@@ -51,19 +51,19 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: v0.0.2/package-lock.json
+          cache-dependency-path: v0.0.3/package-lock.json
       - run: npm ci
-        working-directory: v0.0.2
+        working-directory: v0.0.3
       - run: npm run dist:win
-        working-directory: v0.0.2
+        working-directory: v0.0.3
       - run: npm run build:win
-        working-directory: v0.0.2
+        working-directory: v0.0.3
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
           path: |
-            v0.0.2/release/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-Windows-x64-setup.exe
-            v0.0.2/release/assets/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-Windows-x64.zip
+            v0.0.3/release/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-Windows-x64-setup.exe
+            v0.0.3/release/assets/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-Windows-x64.zip
           if-no-files-found: error
           retention-days: 3
 
@@ -77,17 +77,17 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: v0.0.2/package-lock.json
+          cache-dependency-path: v0.0.3/package-lock.json
       - run: npm ci
-        working-directory: v0.0.2
+        working-directory: v0.0.3
       - run: npm run dist:mac
-        working-directory: v0.0.2
+        working-directory: v0.0.3
       - uses: actions/upload-artifact@v4
         with:
           name: macos-intel-release
           path: |
-            v0.0.2/release/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-macOS-x64.dmg
-            v0.0.2/release/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-macOS-x64.zip
+            v0.0.3/release/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-macOS-x64.dmg
+            v0.0.3/release/ArticleSyncWorkbench-${{ needs.check-release.outputs.version }}-macOS-x64.zip
           if-no-files-found: error
           retention-days: 3
 

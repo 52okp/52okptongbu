@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#288EF6"/>
+      <stop offset="1" stop-color="#4250DC"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#91DEFF"/>
+      <stop offset="1" stop-color="#58ACFC"/>
+    </linearGradient>
+  </defs>
+  <!-- Single document silhouette, no outer panel or frame -->
+  <path d="M288 115 H620 Q643 115 662 134 L781 253 Q796 268 796 288 V851 Q796 902 745 902 H288 Q237 902 237 851 V166 Q237 115 288 115 Z" fill="url(#paper)"/>
+  <!-- Paper fold -->
+  <path d="M634 121 V223 Q634 269 680 269 H790 Q786 261 781 253 L662 134 Q649 121 634 121 Z" fill="url(#fold)"/>
+  <!-- Article text: minimal and bold enough for dock icons -->
+  <g fill="#FFFFFF" opacity="0.90">
+    <rect x="326" y="331" width="369" height="32" rx="16"/>
+    <rect x="326" y="397" width="270" height="32" rx="16"/>
+  </g>
+  <!-- Two opposite horizontal synchronization arrows; integrated into document center -->
+  <path d="M337 567 Q337 552 352 552 H610 V521 Q610 506 625 517 L708 580 Q724 592 708 604 L625 667 Q610 678 610 663 V632 H352 Q337 632 337 617 Z" fill="#FFFFFF"/>
+  <path d="M696 705 Q696 720 681 720 H423 V751 Q423 766 408 755 L325 692 Q309 680 325 668 L408 605 Q423 594 423 609 V640 H681 Q696 640 696 655 Z" fill="#FFFFFF" transform="translate(0 80)"/>
+</svg>
