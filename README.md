@@ -1,17 +1,15 @@
 # 文章同步工作台
 
-Windows / Intel Mac desktop software for preparing articles and saving platform drafts. Source is in `v0.0.1/`.
+Windows / Intel Mac desktop software for preparing articles and saving platform drafts. Current source is in `v0.0.2/`.
 
-## First release
+## Downloads
 
-GitHub Actions builds a Windows x64 installer, a Windows portable update archive, and Intel Mac DMG / ZIP assets. Find them under [Releases](https://github.com/52okp/52okptongbu/releases).
+GitHub Actions builds a Windows x64 installer, Windows portable update archive, and Intel Mac DMG / ZIP. Download them from [GitHub Releases](https://github.com/52okp/52okptongbu/releases).
 
-The macOS Intel app is not notarized; macOS may ask the user to approve the first launch.
+The macOS Intel build is not notarized. On first launch, macOS may ask you to approve it in Privacy & Security.
 
-## Updates
+## Local data and updates
 
-The app reads this repository's root `update.json`, downloads the platform-specific GitHub Release ZIP, verifies SHA-256, and starts the new version from a separate local directory. User data and platform sessions remain in the OS user-data directory.
+First launch asks for a local data folder. The folder can later be changed in Settings; articles, tasks, Chromium sessions, and encrypted CSDN credentials are copied, then the app restarts. The update button reads the root `update.json`, verifies the SHA-256 of the OS-specific release ZIP, and launches the new version separately while keeping user data in place.
 
-For later releases, increment `v0.0.1/package.json` and push to `main`; GitHub Actions builds and publishes the new version and updates the manifest.
-
-CSDN credentials are entered locally and encrypted by OS secure storage. No CSDN key is checked into this repository.
+CSDN App Key and Secret are entered on the device and encrypted using OS secure storage. They are not included in this public repository or release package.
