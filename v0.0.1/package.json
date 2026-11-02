@@ -27,7 +27,7 @@
     ],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "artifactName": "${productName}-${version}-Windows-${arch}-setup.${ext}"
+      "artifactName": "ArticleSyncWorkbench-${version}-Windows-${arch}-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -41,7 +41,7 @@
         { "target": "dmg", "arch": ["x64"] },
         { "target": "zip", "arch": ["x64"] }
       ],
-      "artifactName": "${productName}-${version}-macOS-${arch}.${ext}",
+      "artifactName": "ArticleSyncWorkbench-${version}-macOS-${arch}.${ext}",
       "category": "public.app-category.productivity",
       "identity": null
     }

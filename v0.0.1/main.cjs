@@ -132,7 +132,7 @@ async function getUpdateManifest() {
   const releaseUrl = new URL(manifest.releaseUrl);
   const expectedName = platformKey === 'windows'
     ? `ArticleSyncWorkbench-${manifest.version}-Windows-x64.zip`
-    : `文章同步工作台-${manifest.version}-macOS-x64.zip`;
+    : `ArticleSyncWorkbench-${manifest.version}-macOS-x64.zip`;
   const expectedAsset = `/52okp/52okptongbu/releases/download/v${manifest.version}/${expectedName}`;
   if (assetUrl.protocol !== 'https:' || assetUrl.hostname !== 'github.com' || decodeURIComponent(assetUrl.pathname) !== expectedAsset) throw new Error('更新下载地址不是指定的 GitHub Release');
   if (releaseUrl.protocol !== 'https:' || releaseUrl.hostname !== 'github.com' || releaseUrl.pathname !== '/52okp/52okptongbu/releases/tag/v' + manifest.version) throw new Error('更新页面地址无效');
