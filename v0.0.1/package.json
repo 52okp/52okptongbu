@@ -1,0 +1,27 @@
+{
+  "name": "article-sync-workbench",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "文章同步工作台 Windows 桌面测试版",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\package-win.ps1"
+  },
+  "devDependencies": {
+    "electron": "^39.8.10",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.articlesync.workbench",
+    "productName": "文章同步工作台",
+    "asar": true,
+    "directories": { "output": "release" },
+    "files": ["main.cjs", "preload.cjs", "desktop.html", "desktop.css", "desktop.js", "package.json"],
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }],
+      "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
+    }
+  }
+}
