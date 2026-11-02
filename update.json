@@ -6,11 +6,11 @@
   "platforms": {
     "windows": {
       "downloadUrl": "https://github.com/52okp/52okptongbu/releases/download/v0.0.1/ArticleSyncWorkbench-0.0.1-Windows-x64.zip",
-      "sha256": "84a737c96544cee9b6097693e6a911e897af1aec4673713a20c731c7932c8659"
+      "sha256": "ad066cbc7974754b12e812b4335960c456e27611f81bc840e977fcdfba6be03f"
     },
     "macos": {
-      "downloadUrl": "https://github.com/52okp/52okptongbu/releases/download/v0.0.1/文章同步工作台-0.0.1-macOS-x64.zip",
-      "sha256": "eb7131a5921ba91d3f9f0acdd243d9e18a09c3b04b2f6eea7bffca6b08d1b4e8"
+      "downloadUrl": "https://github.com/52okp/52okptongbu/releases/download/v0.0.1/ArticleSyncWorkbench-0.0.1-macOS-x64.zip",
+      "sha256": "c83a76c01b596cb4a9017dec8f1413a80264a4254a0456f1e84b3af781fb68f5"
     }
   }
 }
