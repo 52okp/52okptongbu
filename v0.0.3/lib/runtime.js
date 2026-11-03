@@ -1,4 +1,6 @@
 import { parseJsonResponse, publicImageUrl } from "./model.js";
+import { serializeBody } from './request-body.js';
+import {normalizeImage} from './image-file.js';
 let desktopPlatform=null;
 function platformError(url,response,nonJson=false,text=""){
   const u=new URL(url),zhihu=u.hostname==="zhihu.com"||u.hostname.endsWith(".zhihu.com");
@@ -21,7 +23,10 @@ export async function request(url, options={}) {
 }
 async function networkFetch(url,options={}) {
   if(window.workbench?.platformFetch&&desktopPlatform){
-    const value=await window.workbench.platformFetch(desktopPlatform,url,options);
+    const value=await window.workbench.platformFetch(desktopPlatform,url,{
+      method:options.method,headers:[...new Headers(options.headers||{}).entries()],
+      body:await serializeBody(options.body),credentials:options.credentials,redirect:options.redirect
+    });
     if(value instanceof Response)return value;
     let body=value.body;
     if([204,205,304].includes(value.status)||body?.byteLength===0)body=null;
@@ -39,14 +44,12 @@ export async function imageBlob(url) {
   publicImageUrl(url);
   if(url.startsWith('data:image/')){
     const blob=await (await fetch(url)).blob();
-    if(!blob.size||blob.size>15*1024*1024||!/^image\/(png|jpeg|gif|webp)$/.test(blob.type))throw new Error("图片须为 PNG/JPEG/GIF/WebP 且不超过 15 MB");
-    return blob;
+    return normalizeImage(blob);
   }
-  const response=await networkFetch(url,{credentials:"omit",redirect:"error",signal:AbortSignal.timeout(25000)});
+  const response=await networkFetch(url,{method:"GET",credentials:"omit",redirect:"error",signal:AbortSignal.timeout(25000)});
   if(!response.ok) throw new Error("下载正文图片失败 HTTP "+response.status);
   const blob=await response.blob();
-  if(!blob.size || blob.size>15*1024*1024 || !/^image\/(png|jpeg|gif|webp)$/.test(blob.type)) throw new Error("图片须为 PNG/JPEG/GIF/WebP 且不超过 15 MB");
-  return blob;
+  return normalizeImage(blob);
 }
 export function blobData(blob) { return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error("图片读取失败"));r.readAsDataURL(blob);}); }
 export async function pageTab(url) {

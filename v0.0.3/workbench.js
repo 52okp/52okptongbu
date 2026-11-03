@@ -12,7 +12,8 @@ function status(id,text,kind=""){const el=$("status-"+id);el.textContent=text;el
 function message(text,error=false){$("message").textContent=text;$("message").className=error?"error":"";}
 function setBusy(value){
   busy=value;
-  for(const el of document.querySelectorAll("button,input,select,textarea")) el.disabled=value;
+  if(!value)queueMicrotask(openPendingDraft);
+  for(const el of document.querySelectorAll("#workspace button,#workspace input,#workspace select,#workspace textarea,#history button")) el.disabled=value;
 }
 async function exclusive(fn){
   await navigator.locks.request("article-sync-workbench",{ifAvailable:true},async lock=>{
@@ -27,6 +28,13 @@ for(const p of displayPlatforms){
   row.querySelector(".badge").style.background=p.color;row.querySelector(".badge").textContent=p.badge;
   row.querySelector(".platform-name").textContent=p.name;row.querySelector(".platform-note").textContent=p.note;
   row.querySelector("a").href=p.home;row.querySelector("a").removeAttribute("target");row.querySelector("a").onclick=event=>{event.preventDefault();window.workbench.openPlatform(p.id,p.home);};row.querySelector(".result").id="result-"+p.id;
+  const draftLink=row.querySelector('.result');
+  draftLink.removeAttribute('target');
+  draftLink.onclick=event=>{
+    event.preventDefault();
+    const action=draftLink.dataset.editorTabId?window.workbench.showPlatformTab(p.id,draftLink.dataset.editorTabId):window.workbench.openPlatform(p.id,draftLink.href);
+    action.catch(error=>message(error.message,true));
+  };
   const single=document.createElement("button");single.className="quiet single-sync";single.id="sync-"+p.id;single.textContent="单独同步";
   single.onclick=()=>syncTargets([p]);
   row.querySelector(".platform-name").append(single);
@@ -36,22 +44,26 @@ for(const p of displayPlatforms){
 const help=document.createElement("dialog");help.id="zhihu-help";
 help.innerHTML='<h2>知乎需要你检查</h2><p id="zhihu-help-message"></p><p class="hint">将在新标签页打开知乎。若平台显示登录或验证码，请自行完成。插件不会读取验证码，也不会自动重复提交。</p><div class="help-actions"><button id="zhihu-open" class="quiet">打开知乎检查 / 验证</button><button id="zhihu-retry" class="quiet">已完成验证，只重试知乎</button><button id="zhihu-close" class="quiet">稍后处理</button></div>';
 document.body.append(help);
-let attentionSubmitted=false,attentionUrl="https://www.zhihu.com/",attentionPlatform="zhihu";
-function showZhihuHelp(error,platform=error.platform||"zhihu"){
+let attentionSubmitted=false,attentionUrl="https://www.zhihu.com/",attentionPlatform="zhihu",attentionTabId=null;
+async function showZhihuHelp(error,platform=error.platform||"zhihu"){
   const meta=byId(platform)||byId("zhihu");attentionPlatform=meta.id;
   help.querySelector("h2").textContent=meta.name+"需要你检查";
   help.querySelector(".hint").textContent="将在新标签页打开平台页面。请自行完成登录或平台要求的验证，插件不会读取验证码或自动重复提交。";
   $("zhihu-open").textContent="打开"+meta.name+"检查 / 验证";
   $("zhihu-retry").textContent="已完成检查，只重试"+meta.name;
   attentionSubmitted=!!error.submitted;
+  attentionTabId=error.editorTabId||null;
   attentionUrl=error.verifyUrl||error.draftUrl||meta.editor;
   $("zhihu-help-message").textContent=error.message+(attentionSubmitted?"。保存请求已发出，请检查原草稿的正文和图片；完整后在任务记录中标记成功，不要直接重新提交。":"。检查完成后可只重试当前平台；若仍被拒绝，需要继续检查接口适配。");
   $("zhihu-retry").hidden=attentionSubmitted||!!error.signatureRejected;
-  if(!help.open)help.showModal();
+  await window.openWorkbenchDialog(help);
 }
-$("zhihu-open").onclick=async()=>{try{await chrome.tabs.create({url:attentionUrl,active:true});}catch(e){message(e.message,true);}};
+$("zhihu-open").onclick=async()=>{help.close();try{if(attentionTabId)await window.workbench.showPlatformTab(attentionPlatform,attentionTabId);else await chrome.tabs.create({url:attentionUrl,active:true});}catch(e){message(e.message+'；原页面可能已经关闭，请从左侧进入平台草稿箱核对。',true);}};
 $("zhihu-retry").onclick=()=>{if(busy||attentionSubmitted)return;help.close();syncTargets([byId(attentionPlatform)]);};
 $("zhihu-close").onclick=()=>help.close();
+const titleField=document.createElement('div');titleField.className='title-field';$('title').before(titleField);titleField.append($('title'));
+const titleCount=document.createElement('span');titleCount.id='titleCount';titleCount.setAttribute('aria-live','polite');titleField.append(titleCount);
+const titleHint=document.createElement('p');titleHint.id='titleHint';titleHint.className='title-hint';titleField.after(titleHint);$('title').setAttribute('aria-describedby','titleHint titleCount');
 function article(){
   let html=$("body").value;
   if($("format").value==="markdown") html=markdownToHtml(html);
@@ -61,6 +73,9 @@ function article(){
   return {title:$("title").value.trim(),html,source,textLength:[...(doc.body.textContent||"").trim()].length};
 }
 function update(){
+  const titleLength=[...$('title').value.trim()].length;
+  titleCount.textContent=titleLength+'/32';titleField.classList.toggle('over-limit',titleLength>32);
+  titleHint.textContent=titleLength>32?'标题已超过 32 字（超出 '+(titleLength-32)+' 字），建议缩短；微博长文章最多 32 字。':'标题建议不超过 32 字（汉字、字母、数字及标点均计数）。';
   try{const a=article();$("counts").textContent=a.textLength+" 字 · "+imageUrls(a.html).length+" 张图片";}
   catch{$("counts").textContent="含不可用图片，请预览检查";}
   if(previewing) preview();
@@ -79,7 +94,7 @@ $("previewButton").onclick=()=>{
 let saveTimer;
 for(const id of ["title","body","format"]) $(id).addEventListener("input",()=>{
   update();clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>chrome.storage.local.set({editor:{title:$("title").value,body:$("body").value,format:$("format").value,source}}).catch(e=>message("本地自动保存失败："+e.message,true)),400);
+  saveTimer=setTimeout(()=>saveCurrentDraft().catch(e=>message("本地自动保存失败："+e.message,true)),400);
 });
 $("importFile").onclick=()=>$("file").click();
 async function importFiles(files){
@@ -90,7 +105,8 @@ async function importFiles(files){
     message("正在导入 "+files[0].name+"…");
     const imported=await readImportFile(files[0]);
     // Persist before changing the UI so storage failures preserve the old article.
-    await chrome.storage.local.set({editor:imported});
+    await saveCurrentDraft();
+    editingDraftId=await window.workbench.saveDraft({...imported,source:""},null);
     $("body").value=imported.body;$("title").value=imported.title;
     $("format").value=imported.format;source="";
     $("source").textContent="来自本地文件："+files[0].name;
@@ -131,11 +147,13 @@ $("export").onclick=()=>{
   }catch(e){message(e.message,true);}
 };
 $("checkAll").onclick=()=>exclusive(async()=>{
+  const failures=[];
   for(const p of platforms){
     status(p.id,"正在检查…");
     try{const user=await withHeaders(p.id,()=>checkAuth(p.id));status(p.id,"已登录 · "+user.name,"success");}
-    catch(e){status(p.id,e.message,"error");}
+    catch(e){status(p.id,e.message,"error");failures.push(p.name+'：'+e.message);}
   }
+  if(failures.length)message(failures.join('\n\n'),true);
 });
 async function syncTargets(targets){
   if(busy)return;
@@ -149,23 +167,20 @@ async function syncTargets(targets){
     if(origins.length&&!await chrome.permissions.request({origins}))throw new Error("需要允许读取正文图片所在的网站，才能转存图片");
   }catch(e){message(e.message,true);return;}
   await exclusive(async()=>{
-    message("正在同步，请保持本页打开…");let done=0,reused=0,attention=null;
+    await saveCurrentDraft();
+    message("正在同步，请保持本页打开…");let done=0,reused=0;const failures=[];
     for(const p of targets){
       $("result-"+p.id).hidden=true;
+      delete $("result-"+p.id).dataset.editorTabId;$("result-"+p.id).textContent='查看草稿 ↗';
       try{
-        const result=await runPlatform(p.id,a,text=>status(p.id,text),previous=>confirm(p.name+"已保存过同名文章「"+previous.title+"」，但本次内容与记录不同。继续会新建草稿，不会更新原草稿。确定继续吗？"),(id,account,article)=>{
-          const count=imageUrls(article.html).length;
-          const imageAction=count?`下载并上传 ${count} 张正文图片。`:"文章没有正文图片。";
-          const draftType=id==="xiaohongshu"?"当前软件会话内的小红书本地草稿":"平台云端草稿";
-          return confirm(`目标平台：${p.name}\n当前账号：${account.name}（${account.id}）\n文章：${article.title}\n操作：${imageAction}保存为${draftType}。\n不会公开发布。\n\n确认继续吗？`);
-        });
+        const result=await runPlatform(p.id,a,text=>status(p.id,text),()=>true);
         status(p.id,(result.reused?"已跳过：之前同步成功 · ":"本次已新建 · ")+result.note,"success");
         const link=$("result-"+p.id);link.href=result.url;link.hidden=false;done++;if(result.reused)reused++;
-      }catch(e){status(p.id,e.message,"error");if(e.needsAttention)attention=e;}
+      }catch(e){status(p.id,e.message,"error");failures.push(p.name+'：'+e.message+(e.submitted?'。保存请求可能已提交，请先检查原草稿，不要直接重复同步。':''));if(e.platform==='csdn'&&e.editorTabId){const link=$('result-csdn');link.dataset.editorTabId=e.editorTabId;link.href='#';link.textContent='打开编辑器检查 ↗';link.hidden=false;}}
       await renderHistory();
     }
     message("完成："+done+"/"+targets.length+" 个平台处理成功；新建 "+(done-reused)+" 个，跳过已同步 "+reused+" 个。");
-    if(attention)showZhihuHelp(attention);
+    if(failures.length)message(failures.join('\n\n'),true);
   });
 }
 $("sync").onclick=()=>syncTargets(selected());
@@ -208,8 +223,7 @@ async function renderHistory(){
 $("refreshHistory").onclick=renderHistory;
 window.addEventListener("beforeunload",event=>{if(busy){event.preventDefault();event.returnValue="";}});
 async function init(){
-  const stored=(await chrome.storage.local.get("editor")).editor;
-  if(stored){$("title").value=stored.title||"";$("body").value=stored.body||"";$("format").value=stored.format||"html";source=stored.source||"";}
+
   const id=new URL(location.href).searchParams.get("import");
   if(id){
     const key="import:"+id,entry=(await chrome.storage.local.get(key))[key];
@@ -222,5 +236,37 @@ async function init(){
   await navigator.locks.request("article-sync-workbench",{ifAvailable:true},async lock=>{if(lock)await recoverInterrupted();});
   await renderHistory();
 }
+
+// Local article management lives in the independent publishing planner.
+let editingDraftId=null,articleWrites=Promise.resolve(),openingDraft=false;
+function editorSnapshot(){return {title:$("title").value,body:$("body").value,format:$("format").value,source};}
+async function saveCurrentDraft(){
+ clearTimeout(saveTimer);saveTimer=null;const value=editorSnapshot();
+ if(!value.title.trim()&&!value.body.trim())return articleWrites;
+ const operation=articleWrites.catch(()=>{}).then(async()=>{editingDraftId=await window.workbench.saveDraft(value,editingDraftId);});
+ articleWrites=operation;return operation;
+}
+async function openPendingDraft(){
+ if(busy||openingDraft)return;openingDraft=true;
+ try{
+  const request=await window.workbench.takeDraft();if(!request)return;
+  await saveCurrentDraft();
+  editingDraftId=request.id==='editor'?null:request.id;
+  const value=request.value;
+  $("title").value=value.title||'';$("body").value=value.body||'';$("format").value=value.format||'html';source=value.source||'';
+  previewing=false;$("preview").hidden=true;$("body").hidden=false;$("previewButton").textContent='预览';
+  $("source").textContent='来自发布计划中的本地文章';
+  for(const p of platforms){status(p.id,'文章已载入，待同步');$("result-"+p.id).hidden=true;}
+  update();window.dispatchEvent(new Event('draft:loaded'));message('文章已打开，可编辑并同步到平台草稿。');
+ }catch(e){message('打开文章失败：'+e.message,true);}finally{openingDraft=false;}
+}
+window.workbench.onPendingDraft(()=>openPendingDraft());
+const articleActions=document.createElement('div');articleActions.className='row';
+articleActions.innerHTML='<button id="saveArticle">保存文章</button><button id="newArticle">新建文章</button><button id="manageArticles">在发布计划管理文章</button>';
+document.querySelector('.panel.article').append(articleActions);
+$('saveArticle').onclick=()=>exclusive(async()=>{await saveCurrentDraft();message('文章已保存到本地，可在发布计划查看。');});
+$('manageArticles').onclick=()=>exclusive(async()=>{await saveCurrentDraft();await window.workbench.openPlanner();});
+$('newArticle').onclick=()=>exclusive(async()=>{await saveCurrentDraft();editingDraftId=null;$('title').value='';$('body').value='';source='';update();});
+window.addEventListener('beforeunload',event=>{if(saveTimer){event.preventDefault();event.returnValue='';saveCurrentDraft().then(()=>message('文章已保存，请再次关闭窗口。')).catch(e=>message(e.message,true));}});
 setBusy(true);
 init().catch(e=>message(e.message,true)).finally(()=>setBusy(false));

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, shell, session, safeStorage } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, shell, session, safeStorage, screen } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -18,11 +18,24 @@ try {
   const settings = JSON.parse(fsSync.readFileSync(dataLocationConfigPath, 'utf8'));
   if (typeof settings.dataPath === 'string' && path.isAbsolute(settings.dataPath)) {
     const savedPath = path.resolve(settings.dataPath);
-    fsSync.mkdirSync(savedPath, { recursive: true });
-    app.setPath('userData', savedPath);
     configuredDataPath = savedPath;
   }
 } catch {}
+if (configuredDataPath) {
+  // A missing/unavailable custom location must never silently reset the setting.
+  fsSync.mkdirSync(configuredDataPath, { recursive: true });
+  app.setPath('userData', configuredDataPath);
+}
+if (!configuredDataPath) {
+  const defaultDataPath = app.isPackaged && process.platform === 'win32'
+    ? path.join(path.dirname(process.execPath), 'ArticleSyncData')
+    : bootstrapUserDataPath;
+  fsSync.mkdirSync(defaultDataPath, { recursive: true });
+  app.setPath('userData', defaultDataPath);
+  configuredDataPath = defaultDataPath;
+  fsSync.mkdirSync(bootstrapUserDataPath, { recursive: true });
+  fsSync.writeFileSync(dataLocationConfigPath, JSON.stringify({ dataPath: defaultDataPath }), 'utf8');
+}
 
 function logStartupError(error) {
   try { fsSync.appendFileSync(path.join(app.getPath('userData'), 'startup.log'), `${new Date().toISOString()} ${error?.stack || error}\n`); } catch {}
@@ -53,6 +66,7 @@ let activePlatform = null;
 let viewBounds = { x: 230, y: 104, width: 1000, height: 700 };
 fsSync.mkdirSync(path.join(app.getPath('userData'), 'browser-sessions'), { recursive: true });
 app.setPath('sessionData', path.join(app.getPath('userData'), 'browser-sessions'));
+const plannerController=require('./planner-main.cjs')({app,BrowserWindow,ipcMain,screen});
 
 async function flushPlatformSessions() {
   await Promise.all([...platformSessions.values()].map(session => Promise.all([
@@ -64,7 +78,7 @@ function pathIsSameOrNested(parentPath, candidatePath) {
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 async function copyUserData(sourcePath, targetPath) {
-  const names = ['workspace.json','task-storage.json','custom-sites.json','csdn-credentials.dat','browser-sessions'];
+  const names = ['workspace.json','task-storage.json','custom-sites.json','csdn-credentials.dat','browser-sessions','publishing-plans.json','planner-window.json'];
   for (const name of names) {
     const source = path.join(sourcePath, name);
     if (!fsSync.existsSync(source)) continue;
@@ -97,7 +111,7 @@ async function chooseDataDirectory(firstRun = false) {
   }
   await fs.mkdir(targetPath, { recursive: true });
   const names = await fs.readdir(targetPath);
-  const dataNames = ['workspace.json','task-storage.json','custom-sites.json','csdn-credentials.dat','browser-sessions'];
+  const dataNames = ['workspace.json','task-storage.json','custom-sites.json','csdn-credentials.dat','browser-sessions','publishing-plans.json','planner-window.json'];
   const collisions = names.filter(name => dataNames.includes(name));
   if (targetPath !== sourcePath && collisions.length) {
     const options = { type: 'warning', title: '目标目录已有应用数据', message: '目标目录包含同名的文章或会话数据。继续会合并数据并覆盖目标中的同名应用文件。', detail: collisions.join('、'), buttons: ['继续迁移','取消'], defaultId: 1, cancelId: 1 };
@@ -105,6 +119,7 @@ async function chooseDataDirectory(firstRun = false) {
     if (answer.response !== 0) return false;
   }
   if (targetPath !== sourcePath) {
+    await plannerController.prepareMigration();
     await flushPlatformSessions();
     await copyUserData(sourcePath, targetPath);
   }
@@ -176,6 +191,12 @@ function pageHostAllowed(key, host) {
   const domains = {csdn:['csdn.net'],weibo:['weibo.com','sina.com.cn'],zhihu:['zhihu.com'],baijiahao:['baidu.com'],toutiao:['toutiao.com'],bilibili:['bilibili.com'],xiaohongshu:['xiaohongshu.com']};
   return (domains[key] || []).some(domain => hostIs(host, domain));
 }
+function installCsdnNavigation(view){
+ require('./lib/editor-navigation.cjs')(view.webContents,{
+  isVisible:()=>!!win&&!win.isDestroyed()&&views.get(activePlatform)===view,
+  confirmLeave:()=>dialog.showMessageBoxSync(win,{type:'question',title:'离开 CSDN 编辑器',message:'CSDN 提示当前页面可能有未保存内容。',detail:'留在编辑页可以先保存草稿；离开页面可能丢失尚未保存的网页修改。此操作不会发布文章。',buttons:['留在编辑页','离开页面'],defaultId:0,cancelId:0,noLink:true})===1
+ });
+}
 function defaultPlatformHeaders(key, host) {
   const settings = {
     csdn: {origin:'https://editor.csdn.net',referer:'https://editor.csdn.net/md/'},
@@ -210,7 +231,7 @@ async function getUpdateManifest() {
   const assetUrl = new URL(update.downloadUrl);
   const releaseUrl = new URL(manifest.releaseUrl);
   const expectedName = platformKey === 'windows'
-    ? `ArticleSyncWorkbench-${manifest.version}-Windows-x64.zip`
+    ? `ArticleSyncWorkbench-${manifest.version}-Windows-x64-setup.exe`
     : `ArticleSyncWorkbench-${manifest.version}-macOS-x64.zip`;
   const expectedAsset = `/52okp/52okptongbu/releases/download/v${manifest.version}/${expectedName}`;
   if (assetUrl.protocol !== 'https:' || assetUrl.hostname !== 'github.com' || decodeURIComponent(assetUrl.pathname) !== expectedAsset) throw new Error('更新下载地址不是指定的 GitHub Release');
@@ -274,7 +295,7 @@ function createWindow() {
     { label: '设置', submenu: [
       { label: '打开本地数据文件夹', click: () => shell.openPath(app.getPath('userData')) },
       { label: '更改本地数据路径…', click: () => chooseDataDirectory(false).catch(error => dialog.showErrorBox('更改数据路径失败', error.message || String(error))) },
-      { label: 'CSDN 凭据…', click: () => win?.webContents.send('menu:csdn-settings') },
+      { label: 'CSDN 使用已登录编辑器，无需配置密钥', enabled: false },
       { label: '登录会话保存在本机', enabled: false },
       { label: '退出时保存网站数据', enabled: false }
     ] },
@@ -316,15 +337,20 @@ let flushingSessions = false;
 app.on('before-quit', event => {
   if (flushingSessions) return;
   event.preventDefault();
-  Promise.all([...platformSessions.values()].map(session => Promise.all([
+  Promise.all([plannerController.flush(), storageWriteQueue, ...[...platformSessions.values()].map(session => Promise.all([
     session.cookies.flushStore(),
     session.flushStorageData()
-  ]))).finally(() => { flushingSessions = true; app.quit(); });
+  ]))]).finally(() => { flushingSessions = true; app.quit(); });
 });
 
 ipcMain.handle('data:load', async () => {
   try { return JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'workspace.json'), 'utf8')); }
   catch { return { title: '', body: '', format: 'markdown', history: [] }; }
+});
+let errorDialogQueue=Promise.resolve();
+ipcMain.handle('ui:error',(_event,text)=>{
+ const show=()=>dialog.showMessageBox(win,{type:'error',title:'操作提示',message:'请检查以下问题',detail:String(text||'操作失败').slice(0,12000),buttons:['确认'],defaultId:0,cancelId:0,noLink:true});
+ errorDialogQueue=errorDialogQueue.catch(()=>{}).then(show);return errorDialogQueue.then(()=>true);
 });
 ipcMain.handle('data:save', async (_event, data) => {
   const file = path.join(app.getPath('userData'), 'workspace.json');
@@ -334,6 +360,31 @@ ipcMain.handle('data:save', async (_event, data) => {
 });
 let storageWriteQueue = Promise.resolve();
 const storageFile = () => path.join(app.getPath('userData'), 'task-storage.json');
+let pendingDraft=null;
+ipcMain.handle('drafts:list',async()=>{
+  await storageWriteQueue.catch(()=>{});const data=await readTaskStorage();
+  const entries=Object.entries(data).filter(([id])=>id.startsWith('draft:')).map(([id,value])=>({id,...value}));
+  if(data.editor&&(data.editor.title||data.editor.body)&&!entries.some(v=>v.title===data.editor.title&&v.body===data.editor.body&&v.format===data.editor.format))entries.unshift({id:'editor',...data.editor});
+  return entries.sort((a,b)=>(b.updated||0)-(a.updated||0));
+});
+ipcMain.handle('drafts:save',(_event,value,id)=>{
+  const result=storageWriteQueue.catch(()=>{}).then(async()=>{const data=await readTaskStorage();const key=require('./lib/drafts.cjs').saveDraft(data,value,id);await fs.mkdir(app.getPath('userData'),{recursive:true});const temp=storageFile()+'.tmp';await fs.writeFile(temp,JSON.stringify(data),'utf8');await fs.rename(temp,storageFile());return key;});storageWriteQueue=result;return result;
+});
+ipcMain.handle('drafts:open',async(_event,id)=>{
+  await storageWriteQueue.catch(()=>{});const data=await readTaskStorage();
+  if(!(id==='editor'||String(id).startsWith('draft:'))||!data[id])throw new Error('本地文章不存在');
+  pendingDraft={id,value:data[id]};
+  if(!win||win.isDestroyed()){createWindow();await new Promise(resolve=>win.webContents.once('did-finish-load',resolve));}
+  if(win.isMinimized())win.restore();win.show();win.focus();win.webContents.send('drafts:pending');return true;
+});
+ipcMain.handle('drafts:delete',(_event,id)=>{
+ const result=storageWriteQueue.catch(()=>{}).then(async()=>{
+  const data=await readTaskStorage();const removed=require('./lib/drafts.cjs').deleteDraft(data,id);
+  if(removed){const temp=storageFile()+'.tmp';await fs.writeFile(temp,JSON.stringify(data),'utf8');await fs.rename(temp,storageFile());if(pendingDraft?.id===id)pendingDraft=null;}
+  return removed;
+ });storageWriteQueue=result;return result;
+});
+ipcMain.handle('drafts:take',()=>{const value=pendingDraft;pendingDraft=null;return value;});
 async function readTaskStorage() {
   try { return JSON.parse(await fs.readFile(storageFile(), 'utf8')); } catch { return {}; }
 }
@@ -346,7 +397,7 @@ ipcMain.handle('storage:get', async (_event, keys) => {
   return {};
 });
 ipcMain.handle('storage:set', (_event, values) => {
-  storageWriteQueue = storageWriteQueue.then(async () => {
+  storageWriteQueue = storageWriteQueue.catch(() => {}).then(async () => {
     const data = await readTaskStorage();
     Object.assign(data, values);
     await fs.mkdir(app.getPath('userData'), { recursive: true });
@@ -355,7 +406,7 @@ ipcMain.handle('storage:set', (_event, values) => {
   return storageWriteQueue.then(() => true);
 });
 ipcMain.handle('storage:remove', (_event, keys) => {
-  storageWriteQueue = storageWriteQueue.then(async () => {
+  storageWriteQueue = storageWriteQueue.catch(() => {}).then(async () => {
     const data = await readTaskStorage();
     for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key];
     await fs.writeFile(storageFile(), JSON.stringify(data), 'utf8');
@@ -389,7 +440,7 @@ ipcMain.handle('update:install', async () => {
   if (!isNewerVersion(manifest.version, app.getVersion())) return { upToDate: true, version: app.getVersion() };
   if (!['win32','darwin'].includes(process.platform)) throw new Error('当前系统暂不支持自动安装更新');
   const root = path.join(bootstrapUserDataPath, 'updates', manifest.version, Date.now().toString());
-  const zipPath = path.join(root, 'update.zip');
+  const zipPath = path.join(root, process.platform === 'win32' ? 'setup.exe' : 'update.zip');
   const appPath = path.join(root, 'app');
   await fs.mkdir(root, { recursive: true });
   const response = await session.defaultSession.fetch(manifest.update.downloadUrl, { redirect: 'follow', signal: AbortSignal.timeout(10 * 60 * 1000) });
@@ -407,6 +458,14 @@ ipcMain.handle('update:install', async () => {
   if (hash.digest('hex').toLowerCase() !== manifest.update.sha256.toLowerCase()) {
     await fs.rm(zipPath, { force: true });
     throw new Error('更新包 SHA-256 校验失败，已删除下载文件');
+  }
+  if (process.platform === 'win32') {
+    await storageWriteQueue;
+    await flushPlatformSessions();
+    const error = await shell.openPath(zipPath);
+    if (error) throw new Error(`无法打开安装程序：${error}`);
+    setTimeout(() => app.quit(), 500);
+    return { installerOpened: true, version: manifest.version };
   }
   await fs.mkdir(appPath, { recursive: true });
   let executable, launchArgs=[];
@@ -431,6 +490,8 @@ ipcMain.handle('update:install', async () => {
   return { installed: true, version: manifest.version };
 });
 ipcMain.handle('settings:csdn:status', () => ({ configured: fsSync.existsSync(csdnCredentialsPath()), encrypted: true }));
+ipcMain.handle('settings:data:path', () => app.getPath('userData'));
+ipcMain.handle('settings:data:choose', async () => { await storageWriteQueue; return chooseDataDirectory(false); });
 ipcMain.handle('settings:csdn:save', async (_event, input) => {
   const appKey = String(input?.appKey || '').trim();
   const secret = String(input?.secret || '').trim();
@@ -488,9 +549,10 @@ ipcMain.handle('platform:open', async (_event, key, urlOverride) => {
       contextIsolation: true, nodeIntegration: false, sandbox: true
     }});
     views.set(key, view);
+    if(key==='csdn')installCsdnNavigation(view);
     platformSessions.set(key, view.webContents.session);
     view.webContents.setWindowOpenHandler(({ url }) => {
-      if (url.startsWith('https://')) { view.webContents.loadURL(url); return { action: 'deny' }; }
+      if (url.startsWith('https://')) { view.webContents.loadURL(url).catch(logStartupError); return { action: 'deny' }; }
       return { action: 'deny' };
     });
     view.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('https://')) event.preventDefault(); });
@@ -513,9 +575,9 @@ ipcMain.handle('platform:open', async (_event, key, urlOverride) => {
         { label: '全选', role: 'selectAll' }
       ]).popup({ window: win });
     });
-    await view.webContents.loadURL(targetUrl);
+    view.webContents.loadURL(targetUrl).catch(logStartupError);
   } else if (urlOverride) {
-    await view.webContents.loadURL(targetUrl);
+    view.webContents.loadURL(targetUrl).catch(logStartupError);
   }
   showPlatform(key);
   return true;
@@ -527,7 +589,8 @@ ipcMain.handle('platform:cookie', async (_event, key, details) => {
 ipcMain.handle('platform:fetch', async (_event, key, spec) => {
   if (!platforms[key]) throw new Error('自动同步仅支持已接入的平台');
   const url = new URL(spec.url);
-  const isExternalImage = spec.credentials === 'omit' && spec.method === 'GET' && publicImageHost(url.hostname);
+  const method = String(spec.method || 'GET').toUpperCase();
+  const isExternalImage = spec.credentials === 'omit' && method === 'GET' && publicImageHost(url.hostname);
   if (!['https:','http:'].includes(url.protocol) || url.username || url.password || (!allowedPlatformHost(key, url.hostname) && !isExternalImage)) throw new Error('请求目标不在此平台的允许范围内');
   if (url.protocol !== 'https:' && !isExternalImage) throw new Error('平台操作只允许 HTTPS');
   const headers = new Headers(spec.headers || []);
@@ -553,7 +616,7 @@ ipcMain.handle('platform:fetch', async (_event, key, spec) => {
   const timer = setTimeout(() => controller.abort(), Math.min(60000, Math.max(1000, Number(spec.timeoutMs) || 25000)));
   try {
     const response = await platformSession(key).fetch(url.href, {
-      method: spec.method || 'GET', headers, body,
+      method, headers, body,
       credentials: spec.credentials === 'omit' ? 'omit' : 'include',
       redirect: spec.redirect === 'error' ? 'error' : 'follow', signal: controller.signal
     });
@@ -565,14 +628,17 @@ ipcMain.handle('platform:tab:create', async (_event, key, urlValue) => {
   if (!platforms[key]) throw new Error('未知平台');
   const url = new URL(urlValue);
   if (url.protocol !== 'https:' || !pageHostAllowed(key, url.hostname)) throw new Error('平台编辑页地址不匹配，已停止操作');
-  const view = new WebContentsView({ webPreferences: { partition: `persist:article-sync-${key}`, contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const view = new WebContentsView({ webPreferences: { partition: `persist:article-sync-${key}`, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
   const id = crypto.randomUUID();
   temporaryTabs.set(id, { key, view });
+  if(key==='csdn')installCsdnNavigation(view);
   platformSessions.set(key, view.webContents.session);
-  await view.webContents.loadURL(url.href);
+  view.setBounds({x:0,y:0,width:1200,height:900});
+  try{await require('./lib/page-wait.cjs').loadEditor(view.webContents,url.href);}
+  catch(error){closeTemporaryTab(id);throw error;}
   const finalUrl = new URL(view.webContents.getURL());
   if (!pageHostAllowed(key, finalUrl.hostname) || /\/login(?:\/|$)/i.test(finalUrl.pathname)) {
-    view.webContents.close(); temporaryTabs.delete(id);
+    closeTemporaryTab(id);
     throw new Error('编辑器需要登录，请先在软件内完成登录');
   }
   return id;
@@ -581,12 +647,22 @@ ipcMain.handle('platform:tab:execute', async (_event, key, id, source, args) => 
   const entry = temporaryTabs.get(id);
   if (!entry || entry.key !== key || typeof source !== 'string' || source.length > 100000) throw new Error('平台临时页面无效');
   const serialized = JSON.stringify(args);
-  return entry.view.webContents.executeJavaScript(`(async()=>{const fn=(${source});return await fn(...${serialized});})()`, true);
+  return require('./lib/page-wait.cjs').executeWithTimeout(entry.view.webContents,`(async()=>{const fn=(${source});return await fn(...${serialized});})()`,()=>closeTemporaryTab(id));
 });
+function closeTemporaryTab(id){
+ const entry=temporaryTabs.get(id);if(!entry)return;
+ const key=`${entry.key}-draft-${id}`;
+ if(views.has(key)){if(win&&!win.isDestroyed())win.contentView.removeChildView(entry.view);views.delete(key);if(activePlatform===key){activePlatform=null;win?.webContents.send('browser:active',null);}}
+ if(!entry.view.webContents.isDestroyed())entry.view.webContents.close();temporaryTabs.delete(id);
+}
 ipcMain.handle('platform:tab:close', async (_event, key, id) => {
   const entry = temporaryTabs.get(id);
-  if (entry?.key === key) { entry.view.webContents.close(); temporaryTabs.delete(id); }
+  if (entry?.key === key) closeTemporaryTab(id);
   return true;
+});
+ipcMain.handle('platform:tab:show',(_event,key,id)=>{
+ const entry=temporaryTabs.get(id);if(!entry||entry.key!==key)throw new Error('编辑器页面不存在');
+ const viewKey=`${key}-draft-${id}`;views.set(viewKey,entry.view);showPlatform(viewKey);return true;
 });
 ipcMain.handle('browser:back', (_event, key) => { const wc = views.get(key)?.webContents; if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); });
 ipcMain.handle('browser:forward', (_event, key) => { const wc = views.get(key)?.webContents; if (wc?.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); });

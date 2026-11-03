@@ -20,6 +20,15 @@ async function serializeBody(body) {
 
 contextBridge.exposeInMainWorld('workbench', {
   load: () => ipcRenderer.invoke('data:load'),
+  showError: text => ipcRenderer.invoke('ui:error',text),
+  openPlanner: () => ipcRenderer.invoke('planner:open'),
+  saveDraft: (value,id) => ipcRenderer.invoke('drafts:save',value,id),
+  takeDraft: () => ipcRenderer.invoke('drafts:take'),
+  onPendingDraft: callback => ipcRenderer.on('drafts:pending',callback),
+  putPlan: item => ipcRenderer.invoke('planner:put',item),
+  listPlans: () => ipcRenderer.invoke('planner:list'),
+  dataPath: () => ipcRenderer.invoke('settings:data:path'),
+  chooseDataPath: () => ipcRenderer.invoke('settings:data:choose'),
   save: data => ipcRenderer.invoke('data:save', data),
   openFile: () => ipcRenderer.invoke('file:open'),
   exportHtml: html => ipcRenderer.invoke('file:export', html),
@@ -34,13 +43,14 @@ contextBridge.exposeInMainWorld('workbench', {
   openPlatform: (key, url) => ipcRenderer.invoke('platform:open', key, url),
   setPlatformContext: key => { currentPlatform = key; return true; },
   platformFetch: async (key,url,options={}) => {
-    const result=await ipcRenderer.invoke('platform:fetch',key,{url,method:options.method,headers:[...(new Headers(options.headers||{})).entries()],body:await serializeBody(options.body),credentials:options.credentials,redirect:options.redirect,timeoutMs:25000});
+    const result=await ipcRenderer.invoke('platform:fetch',key,{url,method:options.method,headers:options.headers||[],body:options.body,credentials:options.credentials,redirect:options.redirect,timeoutMs:25000});
     return {status:result.status,statusText:result.statusText,ok:result.ok,headers:result.headers,body:result.body};
   },
   getPlatformCookie: (key, details) => ipcRenderer.invoke('platform:cookie', key, details),
   createPlatformTab: (key,url) => ipcRenderer.invoke('platform:tab:create',key,url),
   executePlatformPage: (key,id,source,args) => ipcRenderer.invoke('platform:tab:execute',key,id,source,args),
   closePlatformTab: (key,id) => ipcRenderer.invoke('platform:tab:close',key,id),
+  showPlatformTab: (key,id) => ipcRenderer.invoke('platform:tab:show',key,id),
   storageGet: keys => ipcRenderer.invoke('storage:get',keys),
   storageSet: values => ipcRenderer.invoke('storage:set',values),
   storageRemove: keys => ipcRenderer.invoke('storage:remove',keys),

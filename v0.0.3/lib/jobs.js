@@ -1,4 +1,4 @@
-import {saveCsdn,verifyCsdnDraft} from "../adapters/csdn.js";
+import {saveCsdn} from "../adapters/csdn.js";
 import {saveWeibo} from "../adapters/weibo.js";
 import {verifyZhihuDraft,draftDigest} from "../adapters/zhihu-drafts.js";
 import { fingerprint, canRetry, validateArticle } from "./model.js";
@@ -19,12 +19,6 @@ export async function runPlatform(id,article,progress,confirmChanged,confirmActi
       const expected=record.expectedDigest||(!/<img\\b/i.test(article.html)?await draftDigest(article.title,article.html):null);
       if(!expected)throw new Error("上次已创建知乎草稿，旧版没有保存图片核对信息。请打开原草稿检查正文和图片，完整后在任务记录中点击“已核对完整，标记成功”，不要解锁重建");
       const result=await verifyZhihuDraft(record.draftId,expected);
-      await chrome.storage.local.set({[key]:{...record,phase:"done",result,error:"",updated:Date.now()}});
-      return {...result,reused:true};
-    }
-    if(id==="csdn"&&record?.draftId&&record.expectedDigest){
-      progress("核对原 CSDN 草稿");
-      const result=await verifyCsdnDraft(record.draftId,record.expectedDigest);
       await chrome.storage.local.set({[key]:{...record,phase:"done",result,error:"",updated:Date.now()}});
       return {...result,reused:true};
     }

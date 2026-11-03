@@ -10,6 +10,10 @@ const platformSites=[
 const $=id=>document.getElementById(id);
 let customSites=[],activePlatform=null;
 let selectedMainView='workspace';
+const plannerButton=document.createElement('button');
+plannerButton.className='nav';plannerButton.textContent='▦　发布计划';plannerButton.style.marginTop='10px';
+$('workspaceTab').after(plannerButton);
+plannerButton.onclick=()=>window.workbench.openPlanner().catch(showError);
 
 function platformForUrl(value){
   const host=new URL(value).hostname;
@@ -33,7 +37,11 @@ function renderLoginTabs(){
   $('loginTabs').innerHTML=sites.map(site=>`<button class="login-tab ${site.key===activePlatform?'selected':''}" data-site="${escapeHtml(site.key)}" title="${escapeHtml(site.url)}"><span class="tab-dot"></span><span>${escapeHtml(site.name)}</span><small>${site.key===activePlatform?'当前':'打开'}</small></button>`).join('');
   $('loginTabs').querySelectorAll('[data-site]').forEach(button=>button.onclick=()=>window.workbench.openPlatform(button.dataset.site).catch(showError));
 }
-function showError(error){$('message').textContent=error?.message||String(error);$('message').className='error';}
+const pendingErrorMessages=new Set();
+window.reportWorkbenchError=async text=>{
+  $('message').textContent=String(text);$('message').className='error';
+};
+function showError(error){const text=error?.message||String(error);$('message').textContent=text;$('message').className='error';window.reportWorkbenchError(text);}
 function layoutBrowser(){if(!$('browserViewport').hidden){const r=$('browserViewport').getBoundingClientRect();window.workbench.browserBounds({x:r.x,y:r.y,width:r.width,height:r.height});}}
 function updateMainView(){
   const browsing=!!activePlatform;
@@ -46,6 +54,13 @@ function updateMainView(){
 }
 function activateBrowser(key){activePlatform=key;updateMainView();renderLoginTabs();}
 function showMainView(view){selectedMainView=view;activePlatform=null;updateMainView();window.workbench.browserHide();}
+window.openWorkbenchDialog=async dialog=>{
+  // Native WebContentsViews are above HTML dialogs. Detach them before showing a modal.
+  selectedMainView='workspace';
+  await window.workbench.browserHide();activePlatform=null;updateMainView();
+  if(!dialog.open)dialog.showModal();
+};
+window.addEventListener('draft:loaded',()=>showMainView('workspace'));
 window.workbench.onBrowserActive(activateBrowser);
 window.workbench.onBrowserState(state=>{
   if(state.platform!==activePlatform)return;
@@ -60,7 +75,7 @@ async function openCsdnSettings(){
   try{
     const status=await window.workbench.getCsdnCredentialStatus();
     $('csdnCredentialStatus').textContent=status.configured?'本机已配置凭据；Secret 不可回显，可直接输入新值替换。':'尚未配置本机凭据。';
-    $('csdnAppKey').value='';$('csdnSecret').value='';$('csdnSettingsDialog').showModal();
+    $('csdnAppKey').value='';$('csdnSecret').value='';await window.openWorkbenchDialog($('csdnSettingsDialog'));
   }catch(error){alert(`读取 CSDN 凭据状态失败：${error.message||error}`);}
 }
 window.workbench.onMenuCsdnSettings(openCsdnSettings);
@@ -72,12 +87,14 @@ window.workbench.onUpdateProgress(progress=>{
 });
 window.addEventListener('resize',layoutBrowser);
 $('workspaceTab').onclick=()=>showMainView('workspace');
+const returnToWorkspace=document.createElement('button');returnToWorkspace.id='returnToWorkspace';returnToWorkspace.textContent='返回工作台';returnToWorkspace.title='收起平台页面，保留当前编辑内容';returnToWorkspace.style.fontSize='13px';
+$('browserToolbar').prepend(returnToWorkspace);returnToWorkspace.onclick=()=>showMainView('workspace');
 $('historyTab').onclick=()=>showMainView('history');
 $('back').onclick=()=>activePlatform&&window.workbench.browserBack(activePlatform);
 $('forward').onclick=()=>activePlatform&&window.workbench.browserForward(activePlatform);
 $('reload').onclick=()=>activePlatform&&window.workbench.browserReload(activePlatform);
 $('addressForm').onsubmit=event=>{event.preventDefault();if(activePlatform)window.workbench.browserNavigate(activePlatform,$('address').value).catch(showError);};
-$('addSite').onclick=()=>{$('siteName').value='';$('siteUrl').value='';$('addSiteDialog').showModal();};
+$('addSite').onclick=async()=>{$('siteName').value='';$('siteUrl').value='';try{await window.openWorkbenchDialog($('addSiteDialog'));}catch(e){showError(e);}};
 $('cancelAddSite').onclick=()=>$('addSiteDialog').close();
 $('addSiteForm').onsubmit=async event=>{
   event.preventDefault();
@@ -94,10 +111,10 @@ $('checkUpdates').onclick=async()=>{
     const update=await window.workbench.checkForUpdates();
     if(!update.available){alert(`当前版本 ${update.currentVersion} 已是最新版本。`);return;}
     const notes=update.notes?`\n\n更新说明：\n${update.notes}`:'';
-    if(!confirm(`发现新版本 ${update.latestVersion}（当前 ${update.currentVersion}）。\n\n将从 GitHub 下载并校验更新包，随后在独立目录启动新版本；本地文章和登录会话会保留。${notes}\n\n现在更新吗？`))return;
+    if(!confirm(`发现新版本 ${update.latestVersion}（当前 ${update.currentVersion}）。\n\n将从 GitHub 下载并校验更新文件。Windows 将打开新版安装向导；macOS 将启动新版应用。本地数据位置保持不变。${notes}\n\n现在更新吗？`))return;
     button.textContent='正在准备更新…';
     await window.workbench.installUpdate();
-    button.textContent='正在启动新版本…';
+    button.textContent='正在打开更新程序…';
   }catch(error){alert(`检查或安装更新失败：${error.message||error}`);}
   finally{if(!button.isConnected)return;button.disabled=false;button.textContent='检查更新';}
 };

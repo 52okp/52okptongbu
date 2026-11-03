@@ -23,6 +23,7 @@ if ($unpackedExe) {
   }
   New-Item -ItemType Directory -Force -Path $staging, $resources | Out-Null
   $appFiles = @('main.cjs', 'preload.cjs', 'desktop.html', 'desktop.css', 'workbench-layout.css', 'button-layout.css', 'panel-alignment.css', 'sidebar-history.css', 'desktop.js', 'workbench.js', 'styles.css', 'package.json', 'THIRD-PARTY-NOTICES.md') | ForEach-Object { Join-Path $root $_ }
+  $appFiles += @('planner-main.cjs','planner-preload.cjs','planner.html','planner.css','planner.js') | ForEach-Object { Join-Path $root $_ }
   Copy-Item -LiteralPath $appFiles -Destination $staging -Force
   $appDirs = @('lib', 'adapters', 'vendor', 'assets') | ForEach-Object { Join-Path $root $_ }
   Copy-Item -Path $appDirs -Destination $staging -Recurse -Force
@@ -42,13 +43,16 @@ if ($unpackedExe) {
 if (Test-Path -LiteralPath $assetPath) { Remove-Item -LiteralPath $assetPath -Force }
 Compress-Archive -Path (Join-Path $output '*') -DestinationPath $assetPath -CompressionLevel Optimal
 $shaAlgorithm = [System.Security.Cryptography.SHA256]::Create()
-$assetStream = [System.IO.File]::OpenRead($assetPath)
+$installerName = "ArticleSyncWorkbench-$version-Windows-x64-setup.exe"
+$installerPath = Join-Path $releaseRoot $installerName
+if (-not (Test-Path -LiteralPath $installerPath)) { throw 'Build the Windows installer with npm run dist:win before generating update metadata.' }
+$assetStream = [System.IO.File]::OpenRead($installerPath)
 try { $sha256 = [BitConverter]::ToString($shaAlgorithm.ComputeHash($assetStream)).Replace('-', '').ToLowerInvariant() }
 finally { $assetStream.Dispose(); $shaAlgorithm.Dispose() }
 $updateInfo = [ordered]@{
   app = 'ArticleSyncWorkbench'
   version = $version
-  downloadUrl = "https://github.com/52okp/52okptongbu/releases/download/v$version/$assetName"
+  downloadUrl = "https://github.com/52okp/52okptongbu/releases/download/v$version/$installerName"
   sha256 = $sha256
   releaseUrl = "https://github.com/52okp/52okptongbu/releases/tag/v$version"
   notes = 'Article Sync Workbench Windows desktop update.'

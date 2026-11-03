@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 jobs:
   check-release:
     runs-on: ubuntu-latest
@@ -119,7 +123,7 @@ jobs:
           const path = require('node:path');
           const version = process.env.VERSION;
           const files = {
-            windows: path.join('release-assets','windows','assets',`ArticleSyncWorkbench-${version}-Windows-x64.zip`),
+            windows: path.join('release-assets','windows',`ArticleSyncWorkbench-${version}-Windows-x64-setup.exe`),
             macos: path.join('release-assets','macos',`ArticleSyncWorkbench-${version}-macOS-x64.zip`)
           };
           const digest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -130,7 +134,7 @@ jobs:
             notes: '文章同步工作台 Windows 和 Intel Mac 版本更新。',
             platforms: {
               windows: {
-                downloadUrl: `https://github.com/52okp/52okptongbu/releases/download/v${version}/ArticleSyncWorkbench-${version}-Windows-x64.zip`,
+                downloadUrl: `https://github.com/52okp/52okptongbu/releases/download/v${version}/ArticleSyncWorkbench-${version}-Windows-x64-setup.exe`,
                 sha256: digest(files.windows)
               },
               macos: {
@@ -164,7 +168,7 @@ jobs:
             gh release create "$TAG" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "文章同步工作台 v$VERSION" \
-              --notes "Windows x64 安装版、Windows 便携更新包和 Intel Mac 版本。CSDN 凭据由用户在本机设置并使用系统安全存储保护。"
+              --notes "v1.0.0：本地文章归档、独立发布计划、72小时排期、平台草稿同步与图片兼容修复。Windows x64 和 macOS Intel 安装文件均由 GitHub Actions 构建。安装包未配置代码签名。"
           fi
       - name: Commit update manifest
         env:

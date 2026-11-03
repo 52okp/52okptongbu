@@ -1,4 +1,5 @@
 import {checkCsdn} from "./csdn.js";
+import {imageFilename,compatibleUploadImage} from '../lib/image-file.js';
 import {checkWeibo} from "./weibo.js";
 import {updateZhihuDraft} from "./zhihu-drafts.js";
 import {uploadZhihuEmbedded} from "./zhihu-images.js";
@@ -49,10 +50,10 @@ export async function saveBaijiahao(article,ctx) {
   if(!token) throw new Error("未获取百家号编辑凭证，请重新登录创作中心");
   const html=await transferImages(article.html,async url=>{
     const form=new FormData();
-    form.append("media",await imageBlob(url),"article-image.png");
+    const blob=await compatibleUploadImage(await imageBlob(url));form.append("media",blob,imageFilename(blob));
     for(const [k,v] of Object.entries({type:"image",app_id:"1589639493090961",is_waterlog:"1",save_material:"1",no_compress:"0",is_events:"",article_type:"news"})) form.append(k,v);
     const r=await json("https://baijiahao.baidu.com/materialui/picture/uploadProxy",{method:"POST",headers:{token},body:form});
-    if(r.errno!==0&&r.errmsg!=="success") throw new Error(r.errmsg||"百家号图片上传失败");
+    if(r.errno!==0&&r.errmsg!=="success") throw new Error(`百家号图片上传失败：${r.errmsg||'未返回成功'}（code=${r.errno??'无'}，${blob.type}，${blob.size} 字节）`);
     return {url:requireValue(r.ret?.https_url||r.ret?.url,"百家号未返回图片地址").replace(/^\/\//,"https://")};
   },ctx.progress);
   ctx.progress("保存百家号草稿");await ctx.submitting();
@@ -70,9 +71,9 @@ export async function saveBilibili(article,ctx) {
   if(!cookie?.value) throw new Error("未取得 B站 CSRF 凭证，请重新登录");
   const csrf=cookie.value;
   const html=await transferImages(article.html,async url=>{
-    const form=new FormData();form.append("binary",await imageBlob(url),"article-image.png");form.append("csrf",csrf);
+    const blob=await compatibleUploadImage(await imageBlob(url));const form=new FormData();form.append("binary",blob,imageFilename(blob));form.append("csrf",csrf);
     const r=await json("https://api.bilibili.com/x/article/creative/article/upcover",{method:"POST",body:form});
-    if(r.code!==0) throw new Error(r.message||"B站图片上传失败");
+    if(r.code!==0) throw new Error(`B站图片上传失败：${r.message||'未返回成功'}（code=${r.code??'无'}，${blob.type}，${blob.size} 字节）`);
     return {url:requireValue(r.data?.url,"B站未返回图片地址").replace(/^\/\//,"https://"),attrs:r.data?.size?{size:r.data.size}:{}};
   },ctx.progress);
   ctx.progress("保存 B站专栏草稿");await ctx.submitting();
@@ -104,9 +105,11 @@ export async function saveToutiao(article,ctx) {
       csrf=r.headers.get("x-ware-csrf-token");
       if(!csrf) throw new Error("未获取头条图片上传凭证");
     }
-    const form=new FormData();form.append("image",await imageBlob(url),"article-image.png");
+    const blob=await imageBlob(url);
+    const extension={'image/png':'png','image/jpeg':'jpg','image/gif':'gif','image/webp':'webp'}[blob.type];
+    const form=new FormData();form.append("image",blob,"article-image."+extension);
     const r=await json("https://mp.toutiao.com/spice/image?upload_source=20020002&aid=1231&device_platform=web",{method:"POST",headers:{"x-secsdk-csrf-token":csrf},body:form});
-    if(r.code!==0||!r.data?.image_uri) throw new Error(r.message||"头条图片上传失败");
+    if(r.code!==0||!r.data?.image_uri) throw new Error(`头条图片上传失败：${r.message||'未返回图片地址'}（code=${r.code??'无'}，${blob.type}，${blob.size} 字节）`);
     return {url:requireValue(r.data.image_url,"头条未返回图片地址"),attrs:{web_uri:r.data.image_uri,img_width:r.data.image_width||0,img_height:r.data.image_height||0}};
   },ctx.progress);
   ctx.progress("打开头条编辑环境");

@@ -1,1 +1,6 @@
 .workspace-layout{align-items:stretch}
+.title-field{position:relative}.title-field #title{padding-right:80px}.title-field #titleCount{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;color:#7c879b;pointer-events:none;background:#fff;padding-left:5px}.title-hint{margin:5px 0 12px;font-size:12px;color:#7c879b}.title-field.over-limit #titleCount{color:#bc4138;font-weight:700}.title-field.over-limit #title{border-color:#bc4138}.title-field.over-limit+.title-hint{color:#bc4138}
+.workspace-layout{grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr)}
+#workspaceTab{margin-top:0;padding:18px 12px;background:#354a88;border:1px solid #7187d8;font-size:16px;font-weight:700;box-shadow:0 4px 16px #0002}
+#workspaceTab.active{background:#526cf5;color:#fff;border-color:#a7b5ff}
+@media(max-width:1350px){.workspace-layout{grid-template-columns:minmax(0,1fr) minmax(280px,.8fr)}}

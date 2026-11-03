@@ -1,0 +1,5 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'"><title>发布计划</title><link rel="stylesheet" href="planner.css"></head><body>
+<header><button id="new">＋ 新建计划</button></header>
+<div class="planner-layout"><div id="librarySlot"></div><div class="plans-pane">
+<div class="toolbar"><input id="search" placeholder="搜索文章标题" aria-label="搜索文章标题"><select id="filter" aria-label="筛选状态"><option value="all">全部计划</option><option value="waiting">首发等待中</option><option value="pending">待安排</option><option value="arranged">已安排</option><option value="verify">待核实</option><option value="complete">已完成</option></select><span id="saveState" role="status"></span></div>
+<main><nav id="list" aria-label="文章列表"></nav><section id="detail"><div class="empty">创建或选择一篇文章，开始记录发布进度。</div></section></main></div></div><script type="module" src="planner.js"></script></body></html>

@@ -1,0 +1,2 @@
+const {contextBridge,ipcRenderer}=require('electron');
+contextBridge.exposeInMainWorld('planner',{list:()=>ipcRenderer.invoke('planner:list'),put:item=>ipcRenderer.invoke('planner:put',item),remove:id=>ipcRenderer.invoke('planner:delete',id),drafts:()=>ipcRenderer.invoke('drafts:list'),deleteDraft:id=>ipcRenderer.invoke('drafts:delete',id),openDraft:id=>ipcRenderer.invoke('drafts:open',id),dataPath:()=>ipcRenderer.invoke('settings:data:path'),chooseDataPath:()=>ipcRenderer.invoke('settings:data:choose')});

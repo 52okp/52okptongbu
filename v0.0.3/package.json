@@ -1,6 +1,6 @@
 {
   "name": "article-sync-workbench",
-  "version": "0.0.3",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "文章同步工作台 Windows 桌面测试版",
@@ -24,6 +24,11 @@
     },
     "files": [
       "main.cjs",
+      "planner-main.cjs",
+      "planner-preload.cjs",
+      "planner.html",
+      "planner.css",
+      "planner.js",
       "preload.cjs",
       "desktop.html",
       "desktop.css",
@@ -55,9 +60,10 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "installerIcon": "assets/app.ico",
       "uninstallerIcon": "assets/app.ico",
