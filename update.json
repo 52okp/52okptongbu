@@ -1,16 +1,16 @@
 {
   "app": "ArticleSyncWorkbench",
-  "version": "0.0.3",
-  "releaseUrl": "https://github.com/52okp/52okptongbu/releases/tag/v0.0.3",
+  "version": "1.0.0",
+  "releaseUrl": "https://github.com/52okp/52okptongbu/releases/tag/v1.0.0",
   "notes": "文章同步工作台 Windows 和 Intel Mac 版本更新。",
   "platforms": {
     "windows": {
-      "downloadUrl": "https://github.com/52okp/52okptongbu/releases/download/v0.0.3/ArticleSyncWorkbench-0.0.3-Windows-x64.zip",
-      "sha256": "4fbe1b7d4ab3240c74aaccebcbc7bbf31a84e9bada6bd7eb34041c644bf4f1d5"
+      "downloadUrl": "https://github.com/52okp/52okptongbu/releases/download/v1.0.0/ArticleSyncWorkbench-1.0.0-Windows-x64-setup.exe",
+      "sha256": "3ecec819eea597cab63a74896bf2b065edb709e2b101c564d061bc14d1230656"
     },
     "macos": {
-      "downloadUrl": "https://github.com/52okp/52okptongbu/releases/download/v0.0.3/ArticleSyncWorkbench-0.0.3-macOS-x64.zip",
-      "sha256": "91487cd7dc6b7366affaf11c4f264bd6a4590c506673e833d2118b32a7d10761"
+      "downloadUrl": "https://github.com/52okp/52okptongbu/releases/download/v1.0.0/ArticleSyncWorkbench-1.0.0-macOS-x64.zip",
+      "sha256": "8166f02f1536f33eb8672f57dd87cfc65e15eba116658c399cc6020e0cfc9896"
     }
   }
 }
